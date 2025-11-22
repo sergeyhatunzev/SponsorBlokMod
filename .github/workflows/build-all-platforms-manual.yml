@@ -1,137 +1,132 @@
-name: Build ALL platforms (manual or push)
+name: Сборка всех платформ (чистые ZIP без вложенности)
 
 on:
-  workflow_dispatch:                  # ← главная фича: запускаешь вручную
+  workflow_dispatch:
   push:
-    branches: [ main, master, dev ]   # ← можно убрать, если хочешь только вручную
+    branches: [ main, master ]
 
 jobs:
-  build-all:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code + submodules
+      - name: Checkout + submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Node.js
+      - name: Установка Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Установка зависимостей
         run: npm ci
 
-      - name: Copy config
+      - name: Копируем config
         run: cp config.json.example config.json || true
 
-      # ───── Firefox ─────
+      # =============================================
+      # Firefox (обычная версия)
+      # =============================================
       - name: Build Firefox
         run: npm run build:firefox
 
-      - name: Zip Firefox
+      - name: ZIP Firefox — ЧИСТЫЙ (без папки dist)
         run: |
           cd dist
-          zip -r ../FirefoxExtension.zip *
+          zip -r9 "../SponsorBlokMod-Firefox.zip" ./* 
 
-      - name: Upload Firefox artifact
+      - name: Upload Firefox
         uses: actions/upload-artifact@v4
         with:
-          name: FirefoxExtension
-          path: FirefoxExtension.zip
+          name: SponsorBlokMod-Firefox
+          path: SponsorBlokMod-Firefox.zip
 
-      # ───── Chrome ─────
-      - name: Build Chrome
-        run: npm run build:chrome
-
-      - name: Zip Chrome
-        run: |
-          cd dist
-          zip -r ../ChromeExtension.zip *
-
-      - name: Upload Chrome artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ChromeExtension
-          path: ChromeExtension.zip
-
-      # ───── Edge ─────
-      - name: Clear dist & Build Edge
-        run: |
-          rm -rf dist
-          npm run build:edge
-
-      - name: Zip Edge
-        run: |
-          cd dist
-          zip -r ../EdgeExtension.zip *
-
-      - name: Upload Edge artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: EdgeExtension
-          path: EdgeExtension.zip
-
-      # ───── Safari ─────
-      - name: Clear dist & Build Safari
-        run: |
-          rm -rf dist
-          npm run build:safari
-
-      - name: Zip Safari
-        run: |
-          cd dist
-          zip -r ../SafariExtension.zip *
-
-      - name: Upload Safari artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SafariExtension
-          path: SafariExtension.zip
-
-      # ───── Бета-версии (по желанию) ─────
-      - name: Build Chrome Beta
-        run: |
-          rm -rf dist
-          npm run build:chrome -- --env stream=beta
-
-      - name: Zip Chrome Beta
-        run: |
-          cd dist
-          zip -r ../ChromeExtension-Beta.zip *
-
-      - name: Upload Chrome Beta
-        uses: actions/upload-artifact@v4
-        with:
-          name: ChromeExtension-Beta
-          path: ChromeExtension-Beta.zip
-
+      # =============================================
+      # Firefox Beta
+      # =============================================
       - name: Build Firefox Beta
         run: |
           rm -rf dist
           npm run build:firefox -- --env stream=beta --env autoupdate
 
-      - name: Zip Firefox Beta
+      - name: ZIP Firefox Beta — ЧИСТЫЙ
         run: |
           cd dist
-          zip -r ../FirefoxExtension-Beta.zip *
+          zip -r9 "../SponsorBlokMod-Firefox-Beta.zip" ./*
 
       - name: Upload Firefox Beta
         uses: actions/upload-artifact@v4
         with:
-          name: FirefoxExtension-Beta
-          path: FirefoxExtension-Beta.zip
+          name: SponsorBlokMod-Firefox-Beta
+          path: SponsorBlokMod-Firefox-Beta.zip
 
-      # ───── Финальный архив со всем сразу (удобно) ─────
-      - name: Create final archive with all builds
+      # =============================================
+      # Chrome
+      # =============================================
+      - name: Build Chrome
         run: |
-          mkdir -p all-builds
-          mv *.zip all-builds/ 2>/dev/null || true
-          zip -r SponsorBlock-all-platforms-$(git rev-parse --short HEAD).zip all-builds
+          rm -rf dist
+          npm run build:chrome
 
-      - name: Upload everything in one file
+      - name: ZIP Chrome — ЧИСТЫЙ
+        run: |
+          cd dist
+          zip -r9 "../SponsorBlokMod-Chrome.zip" ./*
+
+      - name: Upload Chrome
         uses: actions/upload-artifact@v4
         with:
-          name: SponsorBlock-all-platforms-$(git rev-parse --short HEAD)
-          path: SponsorBlock-all-platforms-*.zip
+          name: SponsorBlokMod-Chrome
+          path: SponsorBlokMod-Chrome.zip
+
+      # =============================================
+      # Edge + Safari (по желанию, можно удалить)
+      # =============================================
+      - name: Build Edge
+        run: |
+          rm -rf dist
+          npm run build:edge
+          cd dist
+          zip -r9 "../SponsorBlokMod-Edge.zip" ./*
+      - name: Upload Edge
+        uses: actions/upload-artifact@v4
+        with:
+          name: SponsorBlokMod-Edge
+          path: SponsorBlokMod-Edge.zip
+
+      - name: Build Safari
+        run: |
+          rm -rf dist
+          npm run build:safari
+          cd dist
+          zip -r9 "../SponsorBlokMod-Safari.zip" ./*
+      - name: Upload Safari
+        uses: actions/upload-artifact@v4
+        with:
+          name: SponsorBlokMod-Safari
+          path: SponsorBlokMod-Safari.zip
+
+      # =============================================
+      # Один архив со всем сразу (очень удобно)
+      # =============================================
+      - name: Создать общий архив
+        run: |
+          zip -r9 "SponsorBlokMod-ВСЕ-$(git rev-parse --short HEAD).zip" SponsorBlokMod-*.zip
+
+      - name: Upload всё вместе
+        uses: actions/upload-artifact@v4
+        with:
+          name: SponsorBlokMod-ВСЕ
+          path: SponsorBlokMod-ВСЕ-*.zip
+
+      # =============================================
+      # Всегда последняя версия (постоянная ссылка!)
+      # =============================================
+      - name: Upload как LATEST (всегда актуальная версия)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SponsorBlokMod-LATEST
+          path: SponsorBlokMod-ВСЕ-*.zip
+          if-no-files-found: error
