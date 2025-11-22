@@ -1,0 +1,137 @@
+name: Build ALL platforms (manual or push)
+
+on:
+  workflow_dispatch:                  # ← главная фича: запускаешь вручную
+  push:
+    branches: [ main, master, dev ]   # ← можно убрать, если хочешь только вручную
+
+jobs:
+  build-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code + submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Copy config
+        run: cp config.json.example config.json || true
+
+      # ───── Firefox ─────
+      - name: Build Firefox
+        run: npm run build:firefox
+
+      - name: Zip Firefox
+        run: |
+          cd dist
+          zip -r ../FirefoxExtension.zip *
+
+      - name: Upload Firefox artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FirefoxExtension
+          path: FirefoxExtension.zip
+
+      # ───── Chrome ─────
+      - name: Build Chrome
+        run: npm run build:chrome
+
+      - name: Zip Chrome
+        run: |
+          cd dist
+          zip -r ../ChromeExtension.zip *
+
+      - name: Upload Chrome artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChromeExtension
+          path: ChromeExtension.zip
+
+      # ───── Edge ─────
+      - name: Clear dist & Build Edge
+        run: |
+          rm -rf dist
+          npm run build:edge
+
+      - name: Zip Edge
+        run: |
+          cd dist
+          zip -r ../EdgeExtension.zip *
+
+      - name: Upload Edge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EdgeExtension
+          path: EdgeExtension.zip
+
+      # ───── Safari ─────
+      - name: Clear dist & Build Safari
+        run: |
+          rm -rf dist
+          npm run build:safari
+
+      - name: Zip Safari
+        run: |
+          cd dist
+          zip -r ../SafariExtension.zip *
+
+      - name: Upload Safari artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SafariExtension
+          path: SafariExtension.zip
+
+      # ───── Бета-версии (по желанию) ─────
+      - name: Build Chrome Beta
+        run: |
+          rm -rf dist
+          npm run build:chrome -- --env stream=beta
+
+      - name: Zip Chrome Beta
+        run: |
+          cd dist
+          zip -r ../ChromeExtension-Beta.zip *
+
+      - name: Upload Chrome Beta
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChromeExtension-Beta
+          path: ChromeExtension-Beta.zip
+
+      - name: Build Firefox Beta
+        run: |
+          rm -rf dist
+          npm run build:firefox -- --env stream=beta --env autoupdate
+
+      - name: Zip Firefox Beta
+        run: |
+          cd dist
+          zip -r ../FirefoxExtension-Beta.zip *
+
+      - name: Upload Firefox Beta
+        uses: actions/upload-artifact@v4
+        with:
+          name: FirefoxExtension-Beta
+          path: FirefoxExtension-Beta.zip
+
+      # ───── Финальный архив со всем сразу (удобно) ─────
+      - name: Create final archive with all builds
+        run: |
+          mkdir -p all-builds
+          mv *.zip all-builds/ 2>/dev/null || true
+          zip -r SponsorBlock-all-platforms-$(git rev-parse --short HEAD).zip all-builds
+
+      - name: Upload everything in one file
+        uses: actions/upload-artifact@v4
+        with:
+          name: SponsorBlock-all-platforms-$(git rev-parse --short HEAD)
+          path: SponsorBlock-all-platforms-*.zip
