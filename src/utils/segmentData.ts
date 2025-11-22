@@ -1,6 +1,6 @@
 import { DataCache } from "../../maze-utils/src/cache";
 import { getHash, HashedValue } from "../../maze-utils/src/hash";
-import Config from "../config";
+import Config, {  } from "../config";
 import * as CompileConfig from "../../config.json";
 import { ActionTypes, SponsorSourceType, SponsorTime, VideoID } from "../types";
 import { getHashParams } from "./pageUtils";
@@ -26,6 +26,7 @@ export interface SegmentResponse {
 let autoRefreshInterval: NodeJS.Timeout | null = null;
 
 function startAutoRefreshIfNeeded(videoID: VideoID): void {
+    // Сбрасываем старый интервал
     if (autoRefreshInterval) {
         clearInterval(autoRefreshInterval);
         autoRefreshInterval = null;
@@ -38,7 +39,7 @@ function startAutoRefreshIfNeeded(videoID: VideoID): void {
 
     const text = uploadDateEl.textContent.toLowerCase();
 
-    // Премьеры, стримы, "минут назад", "час назад" — всегда обновляем
+    // Премьеры, стримы, "минут назад", "час назад" — считаем свежими
     const isFresh = text.includes("премьер") || 
                     text.includes("premier") || 
                     text.includes("live") || 
@@ -51,12 +52,13 @@ function startAutoRefreshIfNeeded(videoID: VideoID): void {
 
     autoRefreshInterval = setInterval(() => {
         console.log("[SB Mod] Авто-обновление сегментов...");
+        
+        // Сбрасываем pending, чтобы не ждать старый запрос
+        if (pendingList[videoID]) {
+            delete pendingList[videoID];
+        }
 
-        // Правильный способ сбросить кэш в новой версии maze-utils
-        segmentDataCache.delete(videoID);
-        delete pendingList[videoID];
-
-        // Принудительно загружаем заново (это вызовет перерисовку баров)
+        // Вызываем с ignoreCache=true — это игнорирует кэш и загружает заново
         getSegmentsForVideo(videoID, true);
     }, 30_000);
 
@@ -70,16 +72,21 @@ function startAutoRefreshIfNeeded(videoID: VideoID): void {
     }, 40 * 60 * 1000);
 }
 
-// === ОСНОВНАЯ ФУНКЦИЯ С АВТО-ОБНОВЛЕНИЕМ ===
-export async function getSegmentsForVideo(videoID: VideoID, ignoreCache = false): Promise<SegmentResponse> {
+// === ОСНОВНАЯ ФУНКЦИЯ (С МОДИФИКАЦИЕЙ) ===
+export async function getSegmentsForVideo(videoID: VideoID, ignoreCache: boolean): Promise<SegmentResponse> {
+    // Запускаем авто-обновление, если видео играет
     const video = document.querySelector("video") as HTMLVideoElement;
     if (video && !video.paused && !video.ended && !video.seeking) {
         startAutoRefreshIfNeeded(videoID);
     }
 
+    // ОРИГИНАЛЬНАЯ ЛОГИКА КЭША (БЕЗ ИЗМЕНЕНИЙ)
     if (!ignoreCache) {
-        const cachedData = segmentDataCache.get(videoID);
-        if (cachedData) return cachedData;
+        const cachedData = segmentDataCache.getFromCache(videoID);
+        if (cachedData) {
+            segmentDataCache.cacheUsed(videoID);
+            return cachedData;
+        }
     }
 
     if (pendingList[videoID]) {
@@ -105,7 +112,7 @@ export async function getSegmentsForVideo(videoID: VideoID, ignoreCache = false)
     return result;
 }
 
-// === ЗАГРУЗКА С СЕРВЕРА (БЕЗ ИЗМЕНЕНИЙ) ===
+// === ОРИГИНАЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ (БЕЗ ИЗМЕНЕНИЙ) ===
 async function fetchSegmentsForVideo(videoID: VideoID): Promise<SegmentResponse> {
     const extraRequestData: Record<string, unknown> = {};
     const hashParams = getHashParams();
@@ -125,20 +132,24 @@ async function fetchSegmentsForVideo(videoID: VideoID): Promise<SegmentResponse>
 
     if (response.ok) {
         const receivedSegments: SponsorTime[] = JSON.parse(response.responseText)
-            ?.filter((video: any) => video.videoID === videoID)
-            ?.map((video: any) => video.segments)?.[0]
-            ?.map((segment: any) => ({
-                ...segment,
-                source: SponsorSourceType.Server
-            }))
-            ?.sort((a: any, b: any) => a.segment[0] - b.segment[0]);
+                    ?.filter((video) => video.videoID === videoID)
+                    ?.map((video) => video.segments)?.[0]
+                    ?.map((segment) => ({
+                        ...segment,
+                        source: SponsorSourceType.Server
+                    }))
+                    ?.sort((a, b) => a.segment[0] - b.segment[0]);
 
-        if (receivedSegments?.length) {
-            const result = { segments: receivedSegments, status: response.status };
-            segmentDataCache.set(videoID, result);
+        if (receivedSegments && receivedSegments.length) {
+            const result = {
+                segments: receivedSegments,
+                status: response.status
+            };
+            segmentDataCache.setupCache(videoID).segments = result.segments;
             return result;
         } else {
-            segmentDataCache.set(videoID, { segments: null, status: 200 });
+            // Setup with null data
+            segmentDataCache.setupCache(videoID);
         }
     } else if (response.status !== 404) {
         logRequest(response, "SB", "skip segments");
